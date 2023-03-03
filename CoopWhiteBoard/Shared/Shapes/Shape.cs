@@ -3,9 +3,9 @@
     public interface IShape
     {
         IEnumerable<Node> Nodes { get; }
-        bool AddNode(int x, int y);
-        bool AddNode(Node node);
-        bool Hit(int x, int y);
+        Node AddNode(int x, int y);
+        Node AddNode(Node node);
+        Node Hit(int x, int y);
 
         void DrawNodes(IDrawer drawer);
         void DrawSelf(IDrawer drawer);
@@ -16,41 +16,59 @@
         public IEnumerable<Node> Nodes => nodes;
         public int NodeCount { get; private set; }
 
-        public bool AddNode(int x, int y)
+        public Shape(int nodeCount)
+        {
+            NodeCount = nodeCount;
+        }
+
+        public Node AddNode(int x, int y)
         {
             if (nodes.Count() < NodeCount)
             {
                 nodes.Add(new Node(x, y));
-                return true;
+                return nodes.Last();
             }
-            return false;
+            return null;
         }
 
-        public bool AddNode(Node node)
+        public Node AddNode(Node node)
         {
             if (nodes.Count() < NodeCount)
             {
                 nodes.Add(node);
-                return true;
+                return node;
             }
-            return false;
+            return null;
         }
 
         public void DrawNodes(IDrawer drawer)
         {
-            nodes.ForEach(n => drawer.DrawPoint(n.X, n.Y));
+            nodes.ForEach(n =>
+            {
+                drawer.DrawPoint(n.X - 2, n.Y - 2, 4, "red");
+                drawer.DrawPoint(n.X - 1, n.Y - 1, 2);
+            });
         }
 
         public abstract void DrawSelf(IDrawer drawer);
 
-        public bool Hit(int x, int y)
+        public Node Hit(int x, int y)
         {
             var detect = new Node(x, y);
-            return nodes.Any(n => n.Equals(detect));
+            return nodes.FirstOrDefault(n => n.Equals(detect));
         }
     }
-    public record Node(int X, int Y)
+    public class Node
     {
+        public Node(int X, int Y)
+        {
+            this.X = X;
+            this.Y = Y;
+        }
+
+        public int X { get; set; }
+        public int Y { get; set; }
+
         public virtual bool Equals(Node? other)
         {
             return other != null
@@ -67,6 +85,15 @@
                 hash = hash * 23 + Y.GetHashCode();
                 return hash;
             }
+        }
+        public override string ToString()
+        {
+            return $"{X}|{Y}";
+        }
+
+        public int DistanceTo(Node node)
+        {
+            return (int)Math.Round(Math.Sqrt(Math.Pow(X - node.X, 2) + Math.Pow(Y - node.Y, 2)));
         }
     }
 }

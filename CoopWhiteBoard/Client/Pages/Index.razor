@@ -6,32 +6,44 @@
 @inject IJSRuntime js
 
 <button @onclick="ToggleColorAsync" style="color:@clr">Toggle color between black and red</button>
+<button @onclick="SelectLine">Line</button>
+<button @onclick="SelectRect">Rectangle</button>
+<button @onclick="SelectCircle">Circle</button>
+<button @onclick="SelectSpline">Spline</button>
 <div @ref="container">
-    <Canvas @onmousemove="MouseMoveCanvasAsync" @onmouseup="MouseUpCanvas" @onmousedown="MouseDownCanvas" width="400" height="400" @ref="_context" style="border: 1px solid red"></Canvas>
+    <Canvas @onmousemove="MouseMoveCanvasAsync" @onmouseup="MouseUpCanvas" @onmousedown="MouseDownCanvas" @onmousewheel="MouseWheelCanvas" id="canvas1" width="800" height="600" @ref="_context" style="border: 1px solid red"></Canvas>
 </div>
+<label id="x" @bind="mousex"></label>
+<br />
+<label id="y" @bind="mousey"></label>
 @code
 {
-    private ElementReference container;
-    private Canvas _context;
-    private Excubo.Blazor.Canvas.Contexts.Context2D ctx1;
-    private double canvasx;
-    private double canvasy;
-    private double last_mousex;
-    private double last_mousey;
-    private double mousex;
-    private double mousey;
-    private bool mousedown = false;
-    private string clr = "black";
+    public ElementReference container;
+    public Canvas _context;
+    public Excubo.Blazor.Canvas.Contexts.Context2D ctx1;
+    public double canvasx;
+    public double canvasy;
+    public double last_mousex;
+    public double last_mousey;
+    public double mousex;
+    public double mousey;
+    public double originx = 0;
+    public double originy = 0;
+    public double scale = 1;
+    public bool mousedown = false;
+    public string clr = "black";
 
-    private IShape tempShape = null;
-    private List<IShape> shapes = new List<IShape>();
+    public IShape tempShape = null;
+    public Node tempNode = null;
+    public List<IShape> shapes = new List<IShape>();
+    public Type ShapeType = typeof(Line);
 
-    private class Position
+    public class Position
     {
         public double Left { get; set; }
         public double Top { get; set; }
     }
-    private async Task ToggleColorAsync()
+    public async Task ToggleColorAsync()
     {
         clr = clr == "black" ? "red" : "black";
         await ctx1.StrokeStyleAsync(clr);
@@ -44,47 +56,156 @@
             // initialize settings
             await ctx1.GlobalCompositeOperationAsync(CompositeOperation.Source_Over);
             await ctx1.StrokeStyleAsync(clr);
-            await ctx1.LineWidthAsync(3);
+            await ctx1.LineWidthAsync(2);
             await ctx1.LineJoinAsync(LineJoin.Round);
             await ctx1.LineCapAsync(LineCap.Round);
             // this retrieves the top left corner of the canvas container (which is equivalent to the top left corner of the canvas, as we don't have any margins / padding)
             var p = await js.InvokeAsync<Position>("eval", $"let e = document.querySelector('[_bl_{container.Id}=\"\"]'); e = e.getBoundingClientRect(); e = {{ 'Left': e.x, 'Top': e.y }}; e");
             (canvasx, canvasy) = (p.Left, p.Top);
+            await js.InvokeAsync<object>("init", DotNetObjectReference.Create(this));
         }
     }
 
-    private void MouseDownCanvas(MouseEventArgs e)
+    public void SelectLine()
     {
-        this.last_mousex = mousex = e.ClientX - canvasx;
-        this.last_mousey = mousey = e.ClientY - canvasy;
+        ShapeType = typeof(Line);
+    }
+
+    public void SelectRect()
+    {
+        ShapeType = typeof(Rectangle);
+    }
+
+    public void SelectCircle()
+    {
+        ShapeType = typeof(Circle);
+    }
+
+    public void SelectSpline()
+    {
+
+    }
+
+    public void MouseWheelCanvas(WheelEventArgs e)
+    {
+        return;
+        var wheel = e.DeltaY / 120;//n or -n
+
+        //according to Chris comment
+        var zoom = Math.Pow(1 + Math.Abs(wheel) / 2, wheel > 0 ? 1 : -1);
+        Console.WriteLine("{0} {1}", scale, zoom);
+        if (CloseTo(scale, 0.1) && zoom < 1)
+        {
+            return;
+        }
+        if (CloseTo(scale, 10) && zoom > 1)
+        {
+            return;
+        }
+        ctx1.TranslateAsync(originx, originy);
+        ctx1.ScaleAsync(zoom, zoom);
+        ctx1.TranslateAsync(
+        -(mousex / scale + originx - mousex / (scale * zoom)),
+        -(mousey / scale + originy - mousey / (scale * zoom))
+        );
+
+        originx = (mousex / scale + originx - mousex / (scale * zoom));
+        originy = (mousey / scale + originy - mousey / (scale * zoom));
+        scale *= zoom;
+    }
+
+    public void MouseDownCanvas(MouseEventArgs e)
+    {
         this.mousedown = true;
     }
 
-    private void MouseUpCanvas(MouseEventArgs e)
+    public void MouseUpCanvas(MouseEventArgs e)
     {
         this.mousedown = false;
+        this.last_mousex = mousex = e.ClientX - canvasx;
+        this.last_mousey = mousey = e.ClientY - canvasy;
+
+        var mx = (int)Math.Round(mousex);
+        var my = (int)Math.Round(mousey);
+
+        if (tempShape != null)
+        {
+            if (tempShape.AddNode(mx, my) == null)
+            {
+                shapes.Add(tempShape);
+                tempShape = null;
+                tempNode = null;
+            }
+        }
+        else
+        {
+            tempShape = Activator.CreateInstance(ShapeType) as IShape;
+            //first node
+            tempShape.AddNode(mx, my);
+            //next node
+            tempNode = tempShape.AddNode(mx, my);
+        }
     }
 
     async Task MouseMoveCanvasAsync(MouseEventArgs e)
     {
-        if (!mousedown)
-        {
-            return;
-        }
         mousex = e.ClientX - canvasx;
         mousey = e.ClientY - canvasy;
-        await DrawCanvasAsync(mousex, mousey, last_mousex, last_mousey, clr);
+        var mx = (int)Math.Round(mousex);
+        var my = (int)Math.Round(mousey);
+
+        if (tempNode != null)
+        {
+            tempNode.X = mx;
+            tempNode.Y = my;
+        }
+        if (tempShape == null)
+        {
+            foreach (var s in shapes)
+            {
+                tempNode = s.Hit(mx, my);
+                if (tempNode != null)
+                {
+                    break;
+                }
+            }
+        }
+
         last_mousex = mousex;
         last_mousey = mousey;
+        StateHasChanged();
     }
-    async Task DrawCanvasAsync(double prev_x, double prev_y, double x, double y, string clr)
+
+    [JSInvokable]
+    public async ValueTask RenderAsync()
     {
-        await using (var ctx2 = ctx1.CreateBatch())
+        await using (var batch = ctx1.CreateBatch())
         {
-            await ctx2.BeginPathAsync();
-            await ctx2.MoveToAsync(prev_x, prev_y);
-            await ctx2.LineToAsync(x, y);
-            await ctx2.StrokeAsync();
+            var canvasSize = await GetCanvasSize();
+            await batch.ClearRectAsync(0, 0, canvasSize.Left, canvasSize.Top);
+
+            var drawer = new CanvasDrawer(batch);
+
+            foreach (var s in shapes)
+            {
+                s.DrawSelf(drawer);
+                s.DrawNodes(drawer);
+            }
+
+            if (tempShape != null)
+            {
+                tempShape.DrawSelf(drawer);
+                tempShape.DrawNodes(drawer);
+            }
         }
+    }
+
+    async Task<Position> GetCanvasSize()
+    {
+        return await js.InvokeAsync<Position>("eval", "let cv = document.getElementById('canvas1'); e = { 'Left': cv.width, 'Top': cv.height }; e");
+    }
+    bool CloseTo(double value1, double value2)
+    {
+        return Math.Abs(value1 - value2) < 0.0000001;
     }
 }

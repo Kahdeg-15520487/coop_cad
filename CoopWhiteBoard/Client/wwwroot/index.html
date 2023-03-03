@@ -20,6 +20,16 @@
         <a class="dismiss">🗙</a>
     </div>
     <script src="_framework/blazor.webassembly.js"></script>
+    <script>
+        function gameLoop(timeStamp) {
+            window.requestAnimationFrame(gameLoop);
+            window.instance.invokeMethodAsync('RenderAsync');
+        }
+        window.init = (instance) => {
+            window.instance = instance;
+            window.requestAnimationFrame(gameLoop);
+        }
+    </script>
 </body>
 
 </html>
