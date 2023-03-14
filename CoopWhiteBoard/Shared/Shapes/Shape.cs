@@ -1,4 +1,7 @@
-﻿namespace CoopWhiteBoard.Shared.Shapes
+﻿using System.Text;
+using System.Text.Json;
+
+namespace CoopWhiteBoard.Shared.Shapes
 {
     public interface IShape
     {
@@ -56,6 +59,31 @@
         {
             var detect = new Node(x, y);
             return nodes.FirstOrDefault(n => n.Equals(detect));
+        }
+
+        public static Type ParseType(string serialized)
+        {
+            var typeName = serialized.Split(";").FirstOrDefault();
+            if (string.IsNullOrEmpty(typeName))
+            {
+                throw new ArgumentNullException(nameof(typeName));
+            }
+            //var shape = Activator.CreateInstance("CoopWhiteBoard.Shared", typeName) as Shape;
+            return Type.GetType(typeName);
+        }
+
+        public string Serialize()
+        {
+            return $"{this.GetType().FullName};{JsonSerializer.Serialize(this.nodes)}";
+        }
+        public static Shape Deserialize(string serialized)
+        {
+            var parts = serialized.Split(";");
+
+            var shape = Activator.CreateInstance(Type.GetType(parts[0])) as Shape;
+            shape.nodes = JsonSerializer.Deserialize<List<Node>>(parts[1]);
+
+            return shape;
         }
     }
     public class Node

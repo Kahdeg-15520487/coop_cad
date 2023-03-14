@@ -1,11 +1,14 @@
 ﻿@page "/"
 
 @using CoopWhiteBoard.Shared.Shapes;
+@using CoopWhiteBoard.Shared;
 @using Excubo.Blazor.Canvas;
-@using Microsoft.JSInterop
+@using Microsoft.JSInterop;
+@using System.Text.Json;
 @inject IJSRuntime js
 
-<button @onclick="ToggleColorAsync" style="color:@clr">Toggle color between black and red</button>
+<button @onclick="MoveMode">Toggle Move mode</button>
+<button @onclick="Export">Export</button>
 <button @onclick="SelectLine">Line</button>
 <button @onclick="SelectRect">Rectangle</button>
 <button @onclick="SelectCircle">Circle</button>
@@ -32,6 +35,7 @@
     public double scale = 1;
     public bool mousedown = false;
     public string clr = "black";
+    public bool isMoveMode = false;
 
     public IShape tempShape = null;
     public Node tempNode = null;
@@ -66,9 +70,23 @@
         }
     }
 
+    public void MoveMode()
+    {
+        this.isMoveMode = !this.isMoveMode;
+    }
+
+    public void Export()
+    {
+        var serialized = ShapeSerializer.Serialize(shapes);
+        Console.WriteLine(serialized);
+        shapes = ShapeSerializer.Deserialize(serialized).Select(s => (IShape)s).ToList();
+    }
+
     public void SelectLine()
     {
         ShapeType = typeof(Line);
+        Console.WriteLine(ShapeType.AssemblyQualifiedName);
+        Console.WriteLine(ShapeType);
     }
 
     public void SelectRect()
@@ -117,13 +135,26 @@
     public void MouseDownCanvas(MouseEventArgs e)
     {
         this.mousedown = true;
+
+        var mx = (int)Math.Round(mousex);
+        var my = (int)Math.Round(mousey);
+        if (tempShape == null)
+        {
+            foreach (var s in shapes)
+            {
+                tempNode = s.Hit(mx, my);
+                if (tempNode != null)
+                {
+                    tempShape = s;
+                    break;
+                }
+            }
+        }
     }
 
     public void MouseUpCanvas(MouseEventArgs e)
     {
         this.mousedown = false;
-        this.last_mousex = mousex = e.ClientX - canvasx;
-        this.last_mousey = mousey = e.ClientY - canvasy;
 
         var mx = (int)Math.Round(mousex);
         var my = (int)Math.Round(mousey);
@@ -139,18 +170,22 @@
         }
         else
         {
-            tempShape = Activator.CreateInstance(ShapeType) as IShape;
-            //first node
-            tempShape.AddNode(mx, my);
-            //next node
-            tempNode = tempShape.AddNode(mx, my);
+            if (ShapeType != null)
+            {
+                tempShape = Activator.CreateInstance(ShapeType) as IShape;
+                //first node
+                tempShape.AddNode(mx, my);
+                //next node
+                tempNode = tempShape.AddNode(mx, my);
+                ShapeType = null;
+            }
         }
     }
 
     async Task MouseMoveCanvasAsync(MouseEventArgs e)
     {
-        mousex = e.ClientX - canvasx;
-        mousey = e.ClientY - canvasy;
+        this.last_mousex = mousex = e.ClientX - canvasx;
+        this.last_mousey = mousey = e.ClientY - canvasy;
         var mx = (int)Math.Round(mousex);
         var my = (int)Math.Round(mousey);
 
@@ -158,17 +193,6 @@
         {
             tempNode.X = mx;
             tempNode.Y = my;
-        }
-        if (tempShape == null)
-        {
-            foreach (var s in shapes)
-            {
-                tempNode = s.Hit(mx, my);
-                if (tempNode != null)
-                {
-                    break;
-                }
-            }
         }
 
         last_mousex = mousex;
@@ -197,6 +221,7 @@
                 tempShape.DrawSelf(drawer);
                 tempShape.DrawNodes(drawer);
             }
+            await batch.StrokeTextAsync($"{mousex.ToString().PadLeft(4)}:{mousey.ToString().PadLeft(4)}:{mousedown}:{tempShape == null}:{tempNode == null}:{tempShape?.GetType().Name}", 10, 10);
         }
     }
 
